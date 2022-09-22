@@ -12,8 +12,6 @@ members = [
     "examples/benchmark_graph",
     "examples/coverage",
     "examples/regtrace",
+    "ctrace",
 ]
-default-members = [
-    "jitter_always",
-]
-
+default-members = ["jitter_always"]
