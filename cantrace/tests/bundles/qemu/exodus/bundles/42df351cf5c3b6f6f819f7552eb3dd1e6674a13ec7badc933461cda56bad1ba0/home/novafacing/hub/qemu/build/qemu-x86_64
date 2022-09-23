@@ -1,0 +1,12 @@
+#! /bin/bash
+
+current_directory="$(dirname "$(readlink -f "$0")")"
+executable="${current_directory}/./qemu-x86_64-x"
+library_path="../../../../../lib64:../../../../../usr/lib64:../../../../../lib:../../../../../usr/lib:../../../../../lib32:../../../../../usr/lib32"
+library_path="${current_directory}/${library_path//:/:${current_directory}/}"
+linker="${current_directory}/./linker-471cf6dc398279fd3ed6a1cef63256572e864ca7ae83bf784d3d2f546c834eea"
+if [ "true" == "true" ]; then
+    exec "${linker}" --library-path "${library_path}" --inhibit-rpath "" "${executable}" "$@"
+else
+    exec "${linker}" --library-path "${library_path}" "${executable}" "$@"
+fi
