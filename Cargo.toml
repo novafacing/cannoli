@@ -15,3 +15,6 @@ members = [
     "cantrace",
 ]
 default-members = ["jitter_always"]
+
+[env]
+RUST_TEST_THREADS = "1"
