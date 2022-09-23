@@ -8,9 +8,10 @@ use object::elf::{
 };
 use object::read::elf::{Dyn, FileHeader, ProgramHeader};
 use object::{
-    Endianness, File, FileKind, Object, ObjectKind, ObjectSection, ObjectSegment, ObjectSymbol,
-    StringTable,
+    Endianness, File, FileKind, Object, ObjectSection, ObjectSegment, ObjectSymbol, StringTable,
 };
+use yaxpeax_arch::LengthedInstruction;
+use yaxpeax_x86::amd64::{InstDecoder, Opcode};
 
 struct Flag<T> {
     value: T,
@@ -55,12 +56,17 @@ static FLAGS_DF_1: &[Flag<u32>] = &flags!(
 /// Get the address of the first ret after the entry point...lmao
 pub fn get_start_exit(data: &[u8], base: u64) -> u64 {
     let binfile = File::parse(data).unwrap();
-    let mut entry = binfile.entry() as u64;
+    let is_pie = is_pie(data);
     let mut main_addr = 0;
+    // println!("Base @ 0x{:x}", base);
     for symbol in binfile.symbols() {
         // println!("{:016x} {}", symbol.address(), symbol.name().unwrap());
         if symbol.name().unwrap() == "main" {
-            main_addr = symbol.address() - base;
+            if !is_pie {
+                main_addr = symbol.address() - base;
+            } else {
+                main_addr = symbol.address();
+            }
         }
     }
     assert!(
@@ -68,21 +74,18 @@ pub fn get_start_exit(data: &[u8], base: u64) -> u64 {
         "No main symbol found, can't figure out when the program ends"
     );
 
-    let mut decoder = InstDecoder::default();
+    let decoder = InstDecoder::default();
     let mut offset = main_addr;
-    let mut ret = 0;
-    loop {
+    while offset < data.len().try_into().unwrap() {
         let inst = decoder
             .decode_slice(&data[offset as usize..(offset + 16) as usize])
             .unwrap();
         if let Opcode::RETURN = inst.opcode() {
-            ret = offset;
-            break;
+            return offset;
         }
         offset += inst.len();
     }
-    assert!(ret != 0, "No ret found after main");
-    ret
+    unreachable!("No ret found after main");
 }
 
 /// Get the address of the first loadable segment in the ELF file.
@@ -134,7 +137,7 @@ pub fn is_pie(data: &[u8]) -> bool {
                                             if let Ok(Some(dynstr_data)) =
                                                 s.data_range(endian, data, strtab, strsz)
                                             {
-                                                let dynstr = StringTable::new(
+                                                let _dynstr = StringTable::new(
                                                     dynstr_data,
                                                     0,
                                                     dynstr_data.len() as u64,

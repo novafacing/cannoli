@@ -1,18 +1,13 @@
 use cannoli::create_cannoli;
-use cantracer::CanTracer;
+use cantracer::can_tracer::CanTracer;
 use clap::Parser;
-use object::File;
-use object::{Object, ObjectSection};
 use std::env::set_var;
 use std::fs::read;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::str::from_utf8;
-use std::sync::Arc;
 use std::thread::spawn;
-use yaxpeax_arch::Decoder;
-use yaxpeax_x86::long_mode::InstDecoder;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -25,9 +20,9 @@ struct Args {
     /// QEMU binary
     #[clap(short, long)]
     qemu: PathBuf,
-    /// Input file
+    /// Input seed file or directory of input seed files
     #[clap(short, long)]
-    in_file: Option<PathBuf>,
+    input: Option<PathBuf>,
     /// LD_LIBRARY_PATH for QEMU
     #[clap(short, long, required = false)]
     ld_library_path: Option<PathBuf>,
@@ -58,16 +53,16 @@ fn main() {
         panic!("QEMU binary {:?} does not exist", args.qemu);
     }
 
-    if let Some(in_file) = &args.in_file {
-        if !in_file.exists() {
-            panic!("Input {:?} does not exist", in_file);
+    if let Some(input) = &args.input {
+        if !input.exists() {
+            panic!("Input {:?} does not exist", input);
         }
     }
 
     set_var("CANTRACE_PROG", prog_path.clone());
     set_var("CANTRACE_ARGS", args.args.join(" "));
 
-    let handle = spawn(|| {
+    let _handle = spawn(|| {
         create_cannoli::<CanTracer>(2).unwrap();
     });
 
@@ -82,7 +77,7 @@ fn main() {
 
     let mut inputs = Vec::new();
 
-    if let Some(path) = args.in_file {
+    if let Some(path) = args.input {
         if path.is_file() {
             println!("Got input: {:?}", path.clone());
             inputs.push((Some(path), Stdio::piped()));

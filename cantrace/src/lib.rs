@@ -1,7 +1,7 @@
 #![feature(let_chains)]
 
-mod can_tracer;
-mod can_tracer_context;
-mod elf;
-mod maps;
-mod trace_entry;
+pub mod can_tracer;
+pub mod can_tracer_context;
+pub mod elf;
+pub mod maps;
+pub mod trace_entry;

@@ -31,7 +31,7 @@ impl Display for MemoryMap {
     }
 }
 
-pub fn get_maps(pid: i32, bin: PathBuf) -> Vec<MemoryMap> {
+pub fn get_maps(pid: i32, _bin: PathBuf) -> Vec<MemoryMap> {
     let map_file = format!("/proc/{}/maps", pid);
     let maps_vec = read(map_file).unwrap();
     let maps: &str = from_utf8(&maps_vec).unwrap();

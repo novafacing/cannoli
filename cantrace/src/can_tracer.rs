@@ -1,7 +1,7 @@
 use cannoli::{Cannoli, ClientInfo};
 use yaxpeax_x86::amd64::{Opcode, Operand, DisplayStyle};
 use yaxpeax_arch::LengthedInstruction;
-use std::{sync::Arc, fs::{read_link, read}, str::from_utf8, env::var, path::PathBuf};
+use std::{sync::Arc, fs::{read_link, read}, env::var, path::PathBuf};
 
 use crate::{trace_entry::TraceEntry, can_tracer_context::CanTracerContext, elf::{is_pie, get_text, get_load_base, get_start_exit}, maps::{get_base, get_maps}};
 
@@ -12,31 +12,18 @@ impl Cannoli for CanTracer {
     type TidContext = CanTracerContext;
     type PidContext = ();
 
-    fn init_pid(ci: &ClientInfo) -> Arc<Self::PidContext> {
+    fn init_pid(_ci: &ClientInfo) -> Arc<Self::PidContext> {
         Arc::new(())
     }
 
     fn init_tid(_pid: &Self::PidContext, ci: &ClientInfo) -> (Self, Self::TidContext) {
         // println!("init_tid: {:?}", ci.);
         let qemu_realpath = read_link(format!("/proc/{}/exe", ci.pid)).unwrap();
-        let cmdline_vec = read(format!("/proc/{}/cmdline", ci.pid)).unwrap();
-        let cmdline = from_utf8(&cmdline_vec).unwrap();
         let realpath = PathBuf::from(var("CANTRACE_PROG").unwrap());
         let bin = &read(realpath.clone()).unwrap()[..];
         let is_pie = is_pie(bin.clone());
         let qemu_base = get_base(ci.pid, qemu_realpath.clone());
         let maps = get_maps(ci.pid, qemu_realpath.clone());
-
-        for map in &maps {
-            // println!("map: {}", map);
-        }
-
-        let qemu_max_addr = maps
-            .iter()
-            .filter(|m| m.pathname == qemu_realpath.to_string_lossy())
-            .map(|m| m.end)
-            .max()
-            .unwrap();
 
         let base = maps
             .iter()
@@ -45,7 +32,7 @@ impl Cannoli for CanTracer {
             .unwrap();
 
         let mut text_base = get_text(bin);
-        let mut load_base = get_load_base(bin);
+        let load_base = get_load_base(bin);
 
         if !is_pie {
             text_base -= base.start;
@@ -143,7 +130,7 @@ impl Cannoli for CanTracer {
 
         for entry in trace {
             match entry {
-                TraceEntry::Instr { pc, offset, instr, bytes } => {
+                TraceEntry::Instr { pc, offset: _, instr: _, bytes: _} => {
                     // println!(
                             //     "{:x}: {:?}",
                             //     entry.pc,
@@ -162,7 +149,7 @@ impl Cannoli for CanTracer {
 
                     branch_targets = None;
                 }
-                TraceEntry::Branch {pc, offset, instr, bytes, next, target } => {
+                TraceEntry::Branch {pc, offset: _, instr, bytes: _, next, target } => {
                     // println!(
                     //     "{:x}: {:?} -> 0x{:x} 0x{:x}",
                     //     pc,
