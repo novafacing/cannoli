@@ -41,12 +41,12 @@ impl Cannoli for CanTracer {
 
         let start_exit = get_start_exit(bin.clone(), base.start);
 
-        println!("realpath: {}", realpath.to_string_lossy());
-        println!("is_pie: {}", is_pie);
-        println!("base: {}", base);
-        println!("text base: 0x{:x}", text_base);
-        println!("load base: 0x{:x}", load_base);
-        println!("start_exit: 0x{:x}", start_exit);
+        // println!("realpath: {}", realpath.to_string_lossy());
+        // println!("is_pie: {}", is_pie);
+        // println!("base: {}", base);
+        // println!("text base: 0x{:x}", text_base);
+        // println!("load base: 0x{:x}", load_base);
+        // println!("start_exit: 0x{:x}", start_exit);
 
         (
             Self,
