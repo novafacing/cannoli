@@ -1,9 +1,10 @@
 use cannoli::{Cannoli, ClientInfo};
+use serde_json::to_string;
 use yaxpeax_x86::amd64::{Opcode, Operand, DisplayStyle};
 use yaxpeax_arch::LengthedInstruction;
-use std::{sync::Arc, fs::{read_link, read}, env::var, path::PathBuf};
+use std::{sync::Arc, fs::{read_link, read}, env::var, path::PathBuf, io::Write, net::Shutdown};
 
-use crate::{trace_entry::TraceEntry, can_tracer_context::CanTracerContext, elf::{is_pie, get_text, get_load_base, get_start_exit}, maps::{get_base, get_maps}};
+use crate::{trace_entry::TraceEntry, can_tracer_context::CanTracerContext, elf::{is_pie, get_text, get_load_base, get_start_exit}, maps::{get_base, get_maps}, cov::{Branch, Coverage}};
 
 pub struct CanTracer;
 
@@ -149,7 +150,7 @@ impl Cannoli for CanTracer {
 
                     branch_targets = None;
                 }
-                TraceEntry::Branch {pc, offset: _, instr, bytes: _, next, target } => {
+                TraceEntry::Branch {pc, offset, instr, bytes, next, target } => {
                     // println!(
                     //     "{:x}: {:?} -> 0x{:x} 0x{:x}",
                     //     pc,
@@ -164,7 +165,7 @@ impl Cannoli for CanTracer {
 
                     if !branches.contains_key(pc) {
                         // println!("new branch: {:x}", pc);
-                        branches.insert(*pc, (*instr, *next, *target));
+                        branches.insert(*pc, (*instr, bytes.to_vec(), *offset, *next, *target));
                     }
 
                     if !cov.contains_key(next) {
@@ -184,20 +185,36 @@ impl Cannoli for CanTracer {
                     let cov = tid.cov.lock().unwrap();
                     let branches = tid.branches.lock().unwrap();
 
+                    let mut final_cov = Coverage::new();
+
                     for (branch_addr, branches) in branches.iter() {
-                        let (instr, next, target) = branches;
-                        let next_cov = cov.get(next).unwrap();
-                        let target_cov = cov.get(target).unwrap();
-                        println!(
-                            "0x{:x}: {} -> 0x{:x} ({} hits) 0x{:x} ({} hits)",
-                            branch_addr,
-                            instr.display_with(DisplayStyle::Intel).to_string(),
-                            next,
-                            next_cov,
-                            target,
-                            target_cov
+                                                // println!(
+                        //     "0x{:x}: {} -> 0x{:x} ({} hits) 0x{:x} ({} hits)",
+                        //     branch_addr,
+                        //     instr.display_with(DisplayStyle::Intel).to_string(),
+                        //     next,
+                        //     next_cov,
+                        //     target,
+                        //     target_cov
+                        // );
+                        let branch = Branch::new(
+                            *branch_addr,
+                            branches.2,
+                            branches.0.display_with(DisplayStyle::Intel).to_string(),
+                            branches.1.clone(),
+                            branches.3,
+                            *cov.get(&branches.3).unwrap(),
+                            branches.4,
+                            *cov.get(&branches.4).unwrap(),
                         );
+                        final_cov.branches.push(branch);
                     }
+
+                    let mut stream = tid.stream.lock().unwrap();
+                    stream.write_all(to_string(&final_cov).unwrap().as_bytes()).unwrap();
+                    stream.write_all(b",").unwrap();
+                    stream.flush().unwrap();
+                    stream.shutdown(Shutdown::Write).unwrap();
                 }
             }
         }

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::env::var;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -6,10 +7,12 @@ use yaxpeax_x86::amd64::Instruction;
 use yaxpeax_x86::long_mode::InstDecoder;
 
 use crate::maps::MemoryMap;
+use std::os::unix::net::UnixStream;
 
 pub struct CanTracerContext {
+    pub stream: Arc<Mutex<UnixStream>>,
     pub decoder: Arc<InstDecoder>,
-    pub branches: Arc<Mutex<HashMap<u64, (Instruction, u64, u64)>>>,
+    pub branches: Arc<Mutex<HashMap<u64, (Instruction, Vec<u8>, u64, u64, u64)>>>,
     pub cov: Arc<Mutex<HashMap<u64, u64>>>,
     pub fpath: PathBuf,
     pub bin: Vec<u8>,
@@ -36,6 +39,10 @@ impl CanTracerContext {
     ) -> Self {
         let bin = _bin.clone();
         Self {
+            stream: Arc::new(Mutex::new(
+                UnixStream::connect(PathBuf::from(var("CANTRACE_USOCK").unwrap()).as_path())
+                    .unwrap(),
+            )),
             decoder: Arc::new(InstDecoder::default()),
             branches: Arc::new(Mutex::new(HashMap::new())),
             cov: Arc::new(Mutex::new(HashMap::new())),

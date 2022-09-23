@@ -13,6 +13,7 @@ use object::{
 use yaxpeax_arch::LengthedInstruction;
 use yaxpeax_x86::amd64::{InstDecoder, Opcode};
 
+#[allow(dead_code)]
 struct Flag<T> {
     value: T,
     name: &'static str,
@@ -126,10 +127,11 @@ pub fn is_pie(data: &[u8]) -> bool {
                                         let mut strtab = 0;
                                         let mut strsz = 0;
                                         for d in dynamic {
-                                            let tag: u64 = d.d_tag(endian).into();
-                                            if tag == DT_STRTAB.into() {
+                                            let tag: u32 =
+                                                u32::try_from(d.d_tag(endian)).ok().unwrap();
+                                            if tag == DT_STRTAB {
                                                 strtab = d.d_val(endian);
-                                            } else if tag == DT_STRSZ.into() {
+                                            } else if tag == DT_STRSZ {
                                                 strsz = d.d_val(endian);
                                             }
                                         }
@@ -143,23 +145,25 @@ pub fn is_pie(data: &[u8]) -> bool {
                                                     dynstr_data.len() as u64,
                                                 );
                                                 for d in dynamic {
-                                                    let itag: u64 = d.d_tag(endian).into();
+                                                    let itag: u32 = u32::try_from(d.d_tag(endian))
+                                                        .ok()
+                                                        .unwrap();
                                                     let val: u64 = d.d_val(endian).into();
-                                                    if let Some(tag) = d.tag32(endian) {
-                                                        if !d.is_string(endian) {
-                                                            if itag == DT_FLAGS.into() {
-                                                                // val, 0, flags_df
-                                                            } else if itag == DT_FLAGS_1.into() {
-                                                                // val, 0, flags_df_1
-                                                                for flag in FLAGS_DF_1 {
-                                                                    if val
-                                                                        & <u32 as Into<u64>>::into(
-                                                                            flag.value,
-                                                                        )
-                                                                        == flag.value.into()
-                                                                    {
-                                                                        return true;
-                                                                    }
+                                                    if !d.is_string(endian) {
+                                                        if itag == DT_FLAGS {
+                                                            // val, 0, flags_df
+                                                        } else if itag == DT_FLAGS_1 {
+                                                            // val, 0, flags_df_1
+                                                            for flag in FLAGS_DF_1 {
+                                                                if val
+                                                                    & <u32 as Into<u64>>::into(
+                                                                        flag.value,
+                                                                    )
+                                                                    == <u32 as Into<u64>>::into(
+                                                                        flag.value,
+                                                                    )
+                                                                {
+                                                                    return true;
                                                                 }
                                                             }
                                                         }
