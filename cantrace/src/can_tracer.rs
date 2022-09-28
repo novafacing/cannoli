@@ -4,7 +4,7 @@ use yaxpeax_x86::amd64::{Opcode, Operand, DisplayStyle};
 use yaxpeax_arch::LengthedInstruction;
 use std::{sync::Arc, fs::{read_link, read}, env::var, path::PathBuf, io::Write, net::Shutdown};
 
-use crate::{trace_entry::TraceEntry, can_tracer_context::CanTracerContext, elf::{is_pie, get_text, get_load_base, get_start_exit}, maps::{get_base, get_maps}, cov::{Branch, Coverage}};
+use crate::{trace_entry::TraceEntry, can_tracer_context::CanTracerContext, elf::{is_pie, get_text, get_load_base, get_start_exit}, maps::{get_base, get_maps}, cov::{Branch, Coverage, CodeLocation}};
 
 pub struct CanTracer;
 
@@ -96,7 +96,58 @@ impl Cannoli for CanTracer {
                         trace.push(TraceEntry::Instr { pc, offset, instr, bytes: tid.bin[offset as usize..(offset as usize) + 16].to_vec()});
                     }
                 }
-            
+                Opcode::CMP
+                | Opcode::CMPPD
+                | Opcode::CMPS
+                | Opcode::CMPS
+                | Opcode::CMPSD
+                | Opcode::CMPSD
+                | Opcode::CMPSS
+                | Opcode::CMPXCHG16B
+                | Opcode::COMISD
+                | Opcode::COMISS
+                | Opcode::FCOM
+                | Opcode::FCOMI
+                | Opcode::FCOMIP
+                | Opcode::FCOMP
+                | Opcode::FCOMPP
+                | Opcode::FICOM
+                | Opcode::FICOMP
+                | Opcode::FTST
+                | Opcode::FUCOM
+                | Opcode::FUCOMI
+                | Opcode::FUCOMIP
+                | Opcode::FUCOMP
+                | Opcode::FXAM
+                | Opcode::PCMPEQB
+                | Opcode::PCMPEQD
+                | Opcode::PCMPEQW
+                | Opcode::PCMPGTB
+                | Opcode::PCMPGTD
+                | Opcode::PCMPGTQ
+                | Opcode::PCMPGTW
+                | Opcode::PMAXSB
+                | Opcode::PMAXSD
+                | Opcode::PMAXUD
+                | Opcode::PMAXUW
+                | Opcode::PMINSB
+                | Opcode::PMINSD
+                | Opcode::PMINUD
+                | Opcode::PMINUW
+                | Opcode::TEST
+                | Opcode::UCOMISD
+                | Opcode::UCOMISS
+                | Opcode::VPCMPB
+                | Opcode::VPCMPD
+                | Opcode::VPCMPQ
+                | Opcode::VPCMPUB
+                | Opcode::VPCMPUD
+                | Opcode::VPCMPUQ
+                | Opcode::VPCMPUW
+                | Opcode::VPCMPW => {
+                    trace.push(TraceEntry::CFSet { pc, offset, instr, bytes: tid.bin[offset as usize..(offset as usize) + 16].to_vec() });
+                }
+
                 _ => {
                     trace.push(TraceEntry::Instr { pc, offset, instr, bytes: tid.bin[offset as usize..(offset as usize) + 16].to_vec() });
                 }
@@ -127,6 +178,7 @@ impl Cannoli for CanTracer {
 
     fn trace(&mut self, _pid: &Self::PidContext, tid: &Self::TidContext, trace: &[Self::Trace]) {
         let mut branch_targets: Option<(u64, u64)> = None;
+        let mut lastcf: Option<(CodeLocation)> = None;
 
         for entry in trace {
             match entry {
@@ -159,12 +211,18 @@ impl Cannoli for CanTracer {
                     // );
                     let mut branches = tid.branches.lock().unwrap();
                     let mut cov = tid.cov.lock().unwrap();
+                    let mut causes = tid.causes.lock().unwrap();
 
                     branch_targets = Some((*next, *target));
 
+                    if lastcf.is_some() && !causes.contains_key(pc) {
+                        causes.insert(*pc, lastcf.unwrap());
+                    }
+
                     if !branches.contains_key(pc) {
                         // println!("new branch: {:x}", pc);
-                        branches.insert(*pc, (*instr, bytes.to_vec(), *offset, *next, *target));
+                        let loc = CodeLocation::new(*pc, *offset, instr.display_with(DisplayStyle::Intel).to_string(), bytes.clone());
+                        branches.insert(*pc, (loc, *next, *target));
                     }
 
                     if !cov.contains_key(next) {
@@ -176,6 +234,11 @@ impl Cannoli for CanTracer {
                         // println!("new cov: {:x}", target);
                         cov.insert(*target, 0);
                     }
+
+                    lastcf = None;
+                }
+                TraceEntry::CFSet { pc, offset, instr, bytes } => {
+                    lastcf = Some(CodeLocation::new(*pc, *offset, instr.display_with(DisplayStyle::Intel).to_string(), bytes.clone()));
                 }
                 TraceEntry::Done { } => {
                     // println!();
@@ -183,6 +246,7 @@ impl Cannoli for CanTracer {
                     /* Print out coverage information  */
                     let cov = tid.cov.lock().unwrap();
                     let branches = tid.branches.lock().unwrap();
+                    let causes = tid.causes.lock().unwrap();
 
                     let mut final_cov = Coverage::new();
 
@@ -197,14 +261,12 @@ impl Cannoli for CanTracer {
                         //     target_cov
                         // );
                         let branch = Branch::new(
-                            *branch_addr,
+                            if (causes.contains_key(branch_addr)) { causes.get(branch_addr).clone().cloned() } else { None },
+                            branches.0.clone(),
+                            branches.1,
+                            *cov.get(&branches.1).unwrap(),
                             branches.2,
-                            branches.0.display_with(DisplayStyle::Intel).to_string(),
-                            branches.1.clone(),
-                            branches.3,
-                            *cov.get(&branches.3).unwrap(),
-                            branches.4,
-                            *cov.get(&branches.4).unwrap(),
+                            *cov.get(&branches.2).unwrap(),
                         );
                         final_cov.branches.push(branch);
                     }

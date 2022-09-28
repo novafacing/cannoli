@@ -7,6 +7,12 @@ pub enum TraceEntry {
         instr: Instruction,
         bytes: Vec<u8>,
     },
+    CFSet {
+        pc: u64,
+        offset: u64,
+        instr: Instruction,
+        bytes: Vec<u8>,
+    },
     Branch {
         pc: u64,
         offset: u64,
