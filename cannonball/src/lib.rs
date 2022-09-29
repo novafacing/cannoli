@@ -1,10 +1,13 @@
 #![feature(let_chains)]
+#![feature(read_buf)]
 
 pub mod cannonball_tracer;
 pub mod cannonball_tracer_context;
 pub mod cov;
 pub mod elf;
+pub mod jithook_gen;
 pub mod maps;
+pub mod qemu_exec;
 pub mod trace_entry;
 
 use std::env::set_var;
@@ -23,10 +26,11 @@ use indicatif::ProgressBar;
 use serde_json::to_string_pretty;
 use uuid::Uuid;
 
+use crate::jithook_gen::generate_libjithook;
+use crate::qemu_exec::{exec_qemu, QemuArch};
+
 pub fn trace(
     prog_path: PathBuf,
-    qemu_path: PathBuf,
-    jithook_path: PathBuf,
     input_path: Option<PathBuf>,
     ld_library_path: Option<PathBuf>,
     cannoli_threads: Option<usize>,
@@ -34,21 +38,9 @@ pub fn trace(
 ) {
     let prog_path = prog_path.canonicalize().unwrap();
     let prog_path_str = prog_path.to_str().unwrap();
-    let qemu_path = qemu_path.canonicalize().unwrap();
-    let qemu_path_str = qemu_path.to_str().unwrap();
-    let jithook_path = jithook_path.canonicalize().unwrap();
-    let jithook_path_str = jithook_path.to_str().unwrap();
 
     if !prog_path.exists() {
         panic!("{:?} does not exist", prog_path.display());
-    }
-
-    if !jithook_path.exists() {
-        panic!("Jitter path {:?} does not exist", jithook_path);
-    }
-
-    if !qemu_path.exists() {
-        panic!("QEMU binary {:?} does not exist", qemu_path);
     }
 
     if let Some(input) = &input_path {
@@ -56,6 +48,9 @@ pub fn trace(
             panic!("Input {:?} does not exist", input);
         }
     }
+
+    let libjithook_path = generate_libjithook();
+    let libjithook_path_str = libjithook_path.to_str().unwrap();
 
     let sid = Uuid::new_v4().to_string();
     let tmppath = std::env::temp_dir().join(sid + ".sock");
@@ -74,56 +69,57 @@ pub fn trace(
     });
 
     let mut qemu_args: Vec<String> = Vec::new();
+    qemu_args.push("qemu-x86_64".to_string());
 
     if let Some(ref path) = ld_library_path {
         qemu_args.push("-E".to_string());
-        let ld_lib_path = path.to_str().unwrap();
-        let ld_library_path = format!("LD_LIBRARY_PATH={}", ld_lib_path);
-        qemu_args.push(ld_library_path);
+        qemu_args.push(format!(
+            "LD_LIBRARY_PATH={}",
+            path.canonicalize().unwrap().to_str().unwrap().to_string()
+        ));
     }
 
     let mut inputs = Vec::new();
 
     if let Some(path) = input_path {
         if path.is_file() {
-            inputs.push((Some(path), Stdio::piped()));
+            inputs.push(Some(path));
         } else if path.is_dir() {
             for entry in std::fs::read_dir(path.clone()).unwrap() {
                 let entry = entry.unwrap();
                 let ipath = entry.path();
+
                 if ipath.is_file() {
-                    inputs.push((Some(ipath), Stdio::piped()));
+                    inputs.push(Some(ipath));
                 }
             }
         }
     } else {
-        inputs.push((None, Stdio::null()));
+        inputs.push(None);
     }
 
     let bar = ProgressBar::new(u64::try_from(inputs.len()).ok().unwrap());
 
-    for input in inputs {
-        let mut qemu = Command::new(qemu_path_str)
-            .stdin(input.1)
-            .stdout(Stdio::null())
-            .args(qemu_args.clone())
-            .arg("-cannoli")
-            .arg(jithook_path_str)
-            .arg(prog_path_str)
-            .args(args.clone())
-            .spawn()
-            .expect("Failed to spawn qemu");
+    qemu_args.push("-cannoli".to_string());
+    qemu_args.push(libjithook_path_str.to_string());
+    qemu_args.push(prog_path_str.to_string());
+    qemu_args.extend(args.clone());
 
-        if let Some(infile) = input.0 {
-            let mut qemu_stdin = qemu.stdin.take().expect("Failed to open qemu stdin");
-            spawn(move || {
-                qemu_stdin
-                    .write_all(&read(infile).unwrap())
-                    .expect("Failed to write qemu stdin");
-            });
+    for input in inputs {
+        let mut input_bytes = Vec::new();
+
+        if let Some(input) = input {
+            input_bytes = read(input).unwrap();
         }
 
-        qemu.wait().expect("Failed to wait for qemu");
+        println!("Running: {:?}", qemu_args);
+
+        if let Some((_stdout, _stderr)) =
+            exec_qemu(QemuArch::X86_64, qemu_args.clone(), Some(input_bytes), None)
+        {}
+
+        println!("Done");
+
         bar.inc(1);
     }
     bar.finish();

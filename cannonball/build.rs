@@ -1,5 +1,5 @@
 use std::env::var;
-use std::fs::{copy, create_dir, rename};
+use std::fs::{copy, create_dir};
 use std::io::Cursor;
 use std::path::PathBuf;
 use std::process::Command;
@@ -8,7 +8,7 @@ use curl::easy::Easy;
 use tar::Archive;
 use xz::read::XzDecoder;
 
-const QEMU_REPO: &str = "https://download.qemu.org/qemu-7.1.0.tar.xz";
+const QEMU_REPO: &str = "https://github.com/qemu/qemu.git";
 
 fn main() {
     // Check that we have git and exodus
@@ -16,6 +16,7 @@ fn main() {
     let out_dir = PathBuf::from(var("OUT_DIR").unwrap().as_str());
     let cannonball_sourcedir = PathBuf::from(var("CARGO_MANIFEST_DIR").unwrap().as_str());
     let cannonball_toplevel = cannonball_sourcedir.parent().unwrap();
+    let jithook_sourcedir = cannonball_toplevel.join("jithook");
     let mut qemu_zip_content = Vec::new();
     let mut easy = Easy::new();
     easy.follow_location(true).unwrap();
@@ -148,6 +149,8 @@ fn main() {
                 target_exe.to_string_lossy(),
                 target
             );
+        } else {
+            println!("cargo:rerun-if-changed=build.rs");
         }
 
         // otherwise copy it to the source directory
@@ -164,4 +167,31 @@ fn main() {
             .as_str(),
         );
     }
+
+    // Build jithook library
+    // Command::new("cargo")
+    //     .arg("build")
+    //     .arg("--release")
+    //     .current_dir(jithook_sourcedir.clone())
+    //     .output()
+    //     .expect("Failed to build jithook");
+
+    // let jithook_build_dir = cannonball_toplevel.join("target").join("release");
+
+    // assert!(
+    //     jithook_build_dir.join("libjithook.so").is_file(),
+    //     "Failed to build jithook"
+    // );
+
+    // copy(
+    //     jithook_build_dir.join("libjithook.so"),
+    //     cannonball_sourcedir.join("jithook").join("libjithook.so"),
+    // )
+    // .expect(
+    //     format!(
+    //         "Failed to copy jithook library to {}",
+    //         cannonball_sourcedir.to_string_lossy()
+    //     )
+    //     .as_str(),
+    // );
 }
