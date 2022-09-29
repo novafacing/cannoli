@@ -1,8 +1,8 @@
 [workspace]
 
 resolver = "2"
-members = ["mempipe", "cannoli", "jitter", "jithook", "cannonball"]
-default-members = ["jithook", "cannonball"]
+members = ["mempipe", "cannoli", "jitter", "jitter_always", "cannonball"]
+default-members = ["jitter_always", "cannonball"]
 
 [env]
 RUST_TEST_THREADS = "1"

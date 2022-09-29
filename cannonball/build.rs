@@ -1,12 +1,7 @@
 use std::env::var;
-use std::fs::{copy, create_dir};
-use std::io::Cursor;
+use std::fs::copy;
 use std::path::PathBuf;
 use std::process::Command;
-
-use curl::easy::Easy;
-use tar::Archive;
-use xz::read::XzDecoder;
 
 const QEMU_REPO: &str = "https://github.com/qemu/qemu.git";
 
@@ -16,45 +11,13 @@ fn main() {
     let out_dir = PathBuf::from(var("OUT_DIR").unwrap().as_str());
     let cannonball_sourcedir = PathBuf::from(var("CARGO_MANIFEST_DIR").unwrap().as_str());
     let cannonball_toplevel = cannonball_sourcedir.parent().unwrap();
-    let jithook_sourcedir = cannonball_toplevel.join("jithook");
-    let mut qemu_zip_content = Vec::new();
-    let mut easy = Easy::new();
-    easy.follow_location(true).unwrap();
 
-    easy.url(QEMU_REPO).unwrap();
-    {
-        let mut transfer = easy.transfer();
-        transfer
-            .write_function(|data| {
-                qemu_zip_content.extend_from_slice(data);
-                Ok(data.len())
-            })
-            .unwrap();
-        transfer.perform().unwrap();
-    }
-
-    let response_code = easy.response_code().unwrap();
-    assert!(
-        response_code == 200,
-        "Failed to download qemu source: reponse code {}",
-        response_code
-    );
-
-    let decoder = XzDecoder::new(Cursor::new(qemu_zip_content));
-    let mut archive = Archive::new(decoder);
-
-    create_dir(&out_dir.join("qemu")).unwrap_or_default();
-
-    // archive.unpack(out_dir.as_path()).unwrap();
-    for mut entry in archive.entries().unwrap().filter_map(|e| e.ok()) {
-        let path = entry
-            .path()
-            .unwrap()
-            .strip_prefix("qemu-7.1.0")
-            .unwrap()
-            .to_owned();
-        entry.unpack(&out_dir.join("qemu").join(path)).unwrap();
-    }
+    Command::new("git")
+        .arg("clone")
+        .arg(QEMU_REPO)
+        .arg(out_dir.join("qemu"))
+        .output()
+        .expect("Failed to clone qemu");
 
     if !out_dir.join("qemu").join("configure").is_file() {
         panic!(
@@ -76,27 +39,17 @@ fn main() {
     let mut patch_status = Command::new("patch")
         .arg("-p1")
         .arg("-i")
-        .arg(patches_pre_path.as_os_str())
+        .arg(patches_path.as_os_str())
         .current_dir(out_dir.join("qemu"))
         .output()
         .expect("Failed to patch qemu");
 
-    if !patch_status.status.success() {
-        patch_status = Command::new("patch")
-            .arg("-p1")
-            .arg("-i")
-            .arg(patches_path.as_os_str())
-            .current_dir(out_dir.join("qemu"))
-            .output()
-            .expect("Failed to patch qemu");
-
-        assert!(
-            patch_status.status.success(),
-            "Failed to patch qemu: stdout: {} / stderr: {}",
-            String::from_utf8_lossy(&patch_status.stdout),
-            String::from_utf8_lossy(&patch_status.stderr)
-        );
-    }
+    // assert!(
+    //     patch_status.status.success(),
+    //     "Failed to patch qemu: stdout: {} / stderr: {}",
+    //     String::from_utf8_lossy(&patch_status.stdout),
+    //     String::from_utf8_lossy(&patch_status.stderr)
+    // );
 
     let configure_status = Command::new("./configure")
         .arg("--extra-ldflags=-ldl")
@@ -168,28 +121,28 @@ fn main() {
         );
     }
 
-    // Build jithook library
+    // Build jitter_always library
     // Command::new("cargo")
     //     .arg("build")
     //     .arg("--release")
-    //     .current_dir(jithook_sourcedir.clone())
+    //     .current_dir(jitter_always_sourcedir.clone())
     //     .output()
-    //     .expect("Failed to build jithook");
+    //     .expect("Failed to build jitter_always");
 
-    // let jithook_build_dir = cannonball_toplevel.join("target").join("release");
+    // let jitter_always_build_dir = cannonball_toplevel.join("target").join("release");
 
     // assert!(
-    //     jithook_build_dir.join("libjithook.so").is_file(),
-    //     "Failed to build jithook"
+    //     jitter_always_build_dir.join("libjitter_always.so").is_file(),
+    //     "Failed to build jitter_always"
     // );
 
     // copy(
-    //     jithook_build_dir.join("libjithook.so"),
-    //     cannonball_sourcedir.join("jithook").join("libjithook.so"),
+    //     jitter_always_build_dir.join("libjitter_always.so"),
+    //     cannonball_sourcedir.join("jitter_always").join("libjitter_always.so"),
     // )
     // .expect(
     //     format!(
-    //         "Failed to copy jithook library to {}",
+    //         "Failed to copy jitter_always library to {}",
     //         cannonball_sourcedir.to_string_lossy()
     //     )
     //     .as_str(),

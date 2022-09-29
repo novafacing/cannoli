@@ -9,6 +9,9 @@ struct Args {
     /// Input seed file or directory of input seed files
     #[clap(short, long, required = false)]
     input: Option<PathBuf>,
+    // Jitter library
+    #[clap(short, long, required = true)]
+    jitter: PathBuf,
     /// Number of threads to use for cannoli (defaults to 4)
     #[clap(short, long, required = false)]
     threads: Option<usize>,
@@ -27,6 +30,7 @@ fn main() {
     let args = Args::parse();
     trace(
         args.prog,
+        args.jitter,
         args.input,
         args.ld_library_path,
         args.threads,

@@ -19,3 +19,4 @@ fn hook_inst(_pc: u64, _branch: bool) -> HookType {
 fn hook_mem(_pc: u64, _write: bool, _size: usize) -> bool {
     true
 }
+

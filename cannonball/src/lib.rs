@@ -5,7 +5,6 @@ pub mod cannonball_tracer;
 pub mod cannonball_tracer_context;
 pub mod cov;
 pub mod elf;
-pub mod jithook_gen;
 pub mod maps;
 pub mod qemu_exec;
 pub mod trace_entry;
@@ -26,11 +25,11 @@ use indicatif::ProgressBar;
 use serde_json::to_string_pretty;
 use uuid::Uuid;
 
-use crate::jithook_gen::generate_libjithook;
 use crate::qemu_exec::{exec_qemu, QemuArch};
 
 pub fn trace(
     prog_path: PathBuf,
+    jitter_path: PathBuf,
     input_path: Option<PathBuf>,
     ld_library_path: Option<PathBuf>,
     cannoli_threads: Option<usize>,
@@ -49,8 +48,7 @@ pub fn trace(
         }
     }
 
-    let libjithook_path = generate_libjithook();
-    let libjithook_path_str = libjithook_path.to_str().unwrap();
+    let libjitter_always_path_str = jitter_path.to_str().unwrap();
 
     let sid = Uuid::new_v4().to_string();
     let tmppath = std::env::temp_dir().join(sid + ".sock");
@@ -101,7 +99,7 @@ pub fn trace(
     let bar = ProgressBar::new(u64::try_from(inputs.len()).ok().unwrap());
 
     qemu_args.push("-cannoli".to_string());
-    qemu_args.push(libjithook_path_str.to_string());
+    qemu_args.push(libjitter_always_path_str.to_string());
     qemu_args.push(prog_path_str.to_string());
     qemu_args.extend(args.clone());
 
