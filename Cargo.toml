@@ -6,3 +6,7 @@ default-members = ["jitter_always", "cantrace"]
 
 [env]
 RUST_TEST_THREADS = "1"
+
+[profile.dev]
+opt-level = 0
+debug = true

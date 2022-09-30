@@ -179,13 +179,11 @@ impl Cannoli for CanTracer {
     }
 
     fn trace(&mut self, _pid: &Self::PidContext, tid: &Self::TidContext, trace: &[Self::Trace]) {
-        let mut branch_targets= tid.branch_targets.lock().unwrap();
-        let mut lastcf = tid.last_cf.lock().unwrap();
-        let mut lastret = tid.last_ret.lock().unwrap();
 
         for entry in trace {
             match entry {
                 TraceEntry::Instr { pc, offset: _, instr: _, bytes: _} => {
+                    let mut branch_targets= tid.branch_targets.lock().unwrap();
                     // println!(
                             //     "{:x}: {:?}",
                             //     entry.pc,
@@ -205,6 +203,9 @@ impl Cannoli for CanTracer {
                     *branch_targets = None;
                 }
                 TraceEntry::Branch {pc, offset, instr, bytes, next, target } => {
+                    let mut branch_targets= tid.branch_targets.lock().unwrap();
+                    let mut lastcf = tid.last_cf.lock().unwrap();
+                    let mut lastret = tid.last_ret.lock().unwrap();
                     let mut branches = tid.branches.lock().unwrap();
                     let mut cov = tid.cov.lock().unwrap();
                     let mut causes = tid.causes.lock().unwrap();
@@ -240,10 +241,13 @@ impl Cannoli for CanTracer {
                     *lastret = None;
                 }
                 TraceEntry::CFSet { pc, offset, instr, bytes } => {
+                    let mut lastcf = tid.last_cf.lock().unwrap();
                     *lastcf = Some(CodeLocation::new(*pc, *offset, instr.display_with(DisplayStyle::Intel).to_string(), bytes.clone()));
                 }
                 TraceEntry::Return { pc, offset, instr, bytes } => {
                     // We only want to log a return if it comes *before* our most recently seen compare
+                    let lastcf = tid.last_cf.lock().unwrap();
+                    let mut lastret = tid.last_ret.lock().unwrap();
                     if (lastcf.is_some() && *pc < lastcf.as_ref().unwrap().addr) || lastcf.is_none() {
                         *lastret = Some(CodeLocation::new(*pc, *offset, instr.display_with(DisplayStyle::Intel).to_string(), bytes.clone()));
                     }
