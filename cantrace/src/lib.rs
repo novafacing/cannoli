@@ -20,6 +20,7 @@ use can_tracer::CanTracer;
 use cannoli::create_cannoli;
 use cov::Coverage;
 use indicatif::ProgressBar;
+use log::debug;
 use serde_json::to_string_pretty;
 use uuid::Uuid;
 
@@ -105,7 +106,8 @@ pub fn trace(
     for input in inputs {
         let mut qemu = Command::new(qemu_path_str)
             .stdin(input.1)
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .args(qemu_args.clone())
             .arg("-cannoli")
             .arg(jitter_path_str)
@@ -122,6 +124,39 @@ pub fn trace(
                     .expect("Failed to write qemu stdin");
             });
         }
+
+        let mut qemu_stdout = qemu.stdout.take().expect("Failed to open qemu stdout");
+        let mut qemu_stderr = qemu.stderr.take().expect("Failed to open qemu stderr");
+
+        spawn(move || {
+            let mut buf = [0; 4096];
+            debug!("Reading QEMU stdout...");
+            loop {
+                let n = qemu_stdout.read(&mut buf).unwrap();
+
+                if n == 0 {
+                    break;
+                }
+
+                debug!("QEMU STDOUT: {}", String::from_utf8_lossy(&buf[..n]));
+            }
+            debug!("QEMU stdout completed.");
+        });
+
+        spawn(move || {
+            let mut buf = [0; 4096];
+            debug!("Reading QEMU stderr...");
+            loop {
+                let n = qemu_stderr.read(&mut buf).unwrap();
+
+                if n == 0 {
+                    break;
+                }
+
+                debug!("QEMU STDERR: {}", String::from_utf8_lossy(&buf[..n]));
+            }
+            debug!("QEMU stderr completed.");
+        });
 
         qemu.wait().expect("Failed to wait for qemu");
         bar.inc(1);

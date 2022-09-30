@@ -55,7 +55,7 @@ static FLAGS_DF_1: &[Flag<u32>] = &flags!(
 );
 
 /// Get the address of the first ret after the entry point...lmao
-pub fn get_start_exit(data: &[u8], base: u64) -> u64 {
+pub fn get_trace_stop(data: &[u8], base: u64) -> u64 {
     let binfile = File::parse(data).unwrap();
     let is_pie = is_pie(data);
     let mut main_addr = 0;

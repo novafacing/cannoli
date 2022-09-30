@@ -23,6 +23,8 @@ clap = { version = "3.2.22", features = ["derive", "cargo"] }
 uuid = { version = "1.1.2", features = ["v4"] }
 serde_json = "1.0"
 indicatif = "0.17.1"
+log = "0.4.17"
+simple_logger = "2.3.0"
 
 [env]
 RUST_TEST_THREADS = "1"

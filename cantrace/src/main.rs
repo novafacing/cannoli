@@ -1,4 +1,5 @@
 use clap::Parser;
+use simple_logger::SimpleLogger;
 
 use std::path::PathBuf;
 
@@ -30,6 +31,7 @@ struct Args {
 }
 
 fn main() {
+    SimpleLogger::new().init().unwrap();
     let args = Args::parse();
     trace(
         args.prog,

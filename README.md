@@ -3,7 +3,9 @@ For the original Cannoli readme, check [here](https://github.com/marginresearch/
 # Cantrace
 
 Cantrace is a coverage tracer that runs really fast! It uses Cannoli (which it's forked from...we'll work on that) to get coverage information of all branches in
-one or more executions of a program and output it as (for now...) JSON.
+one or more executions of a program and output it as (for now...) JSON. It works on
+x86_64 only for now, although there is no reason it won't work on other architectures
+once objects and disassembly are taken care of.
 
 ## Building
 
