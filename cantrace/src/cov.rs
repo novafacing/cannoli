@@ -1,3 +1,4 @@
+use log::{debug, info};
 use serde_derive::{Deserialize, Serialize};
 use std::clone::Clone;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
@@ -44,7 +45,6 @@ impl Branch {
         next_taken: u64,
         target: u64,
         target_taken: u64,
-        triggered_on: Vec<String>,
     ) -> Self {
         Self {
             cause,
@@ -54,7 +54,7 @@ impl Branch {
             next_taken,
             target,
             target_taken,
-            triggered_on,
+            triggered_on: Vec::new(),
         }
     }
 }
@@ -63,6 +63,7 @@ impl Branch {
 pub struct Coverage {
     pub branch_count: usize,
     pub branches: Vec<Branch>,
+    pub pid: Option<i32>,
 }
 
 impl Coverage {
@@ -70,10 +71,11 @@ impl Coverage {
         Self {
             branch_count: 0,
             branches: Vec::new(),
+            pid: None,
         }
     }
 
-    pub fn from(cov_list: Vec<Coverage>) -> Self {
+    pub fn from(cov_list: Vec<Coverage>, pid_input_map: HashMap<i32, String>) -> Self {
         let mut branches = HashMap::new();
         for cov in cov_list {
             for branch in cov.branches {
@@ -82,10 +84,15 @@ impl Coverage {
                         let mut e: &mut Branch = entry.into_mut();
                         e.next_taken += branch.next_taken;
                         e.target_taken += branch.target_taken;
-                        e.triggered_on.extend(branch.triggered_on)
+                        e.triggered_on
+                            .push(pid_input_map.get(&cov.pid.unwrap()).unwrap().clone());
                     }
                     Vacant(entry) => {
-                        entry.insert(branch.clone());
+                        let mut newbranch = branch.clone();
+                        newbranch
+                            .triggered_on
+                            .push(pid_input_map.get(&cov.pid.unwrap()).unwrap().clone());
+                        entry.insert(newbranch);
                     }
                 }
             }
@@ -93,6 +100,7 @@ impl Coverage {
         Self {
             branch_count: branches.len(),
             branches: branches.values().into_iter().cloned().collect(),
+            pid: None,
         }
     }
 }

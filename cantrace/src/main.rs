@@ -1,6 +1,7 @@
 use clap::Parser;
 use simple_logger::SimpleLogger;
 
+use log::LevelFilter;
 use std::path::PathBuf;
 
 use cantrace::trace;
@@ -25,14 +26,23 @@ struct Args {
     /// LD_LIBRARY_PATH for QEMU
     #[clap(short, long, required = false)]
     ld_library_path: Option<PathBuf>,
+    /// Log level
+    #[clap(short = 'L', long, default_value = "info")]
+    log_level: LevelFilter,
+    /// Output file, defaults to stdout
+    #[clap(short, long, required = false)]
+    output: Option<PathBuf>,
     /// Args to pass to the target program
     #[clap(multiple_values = true, last = true)]
     args: Vec<String>,
 }
 
 fn main() {
-    SimpleLogger::new().init().unwrap();
     let args = Args::parse();
+    SimpleLogger::new()
+        .with_level(args.log_level)
+        .init()
+        .unwrap();
     trace(
         args.prog,
         args.qemu,
@@ -40,6 +50,7 @@ fn main() {
         args.input,
         args.ld_library_path,
         args.threads,
+        args.output,
         args.args,
     );
 }

@@ -5,17 +5,17 @@ use yaxpeax_arch::LengthedInstruction;
 use std::{sync::Arc, fs::{read_link, read}, env::var, path::PathBuf, io::Write, net::Shutdown};
 use log::{info, debug, warn};
 
-use crate::{trace_entry::TraceEntry, can_tracer_context::CanTracerContext, elf::{is_pie, get_text, get_load_base, get_trace_stop}, maps::{get_base, get_maps}, cov::{Branch, Coverage, CodeLocation}};
+use crate::{trace_entry::TraceEntry, can_tracer_context::{CanTracerContext, CannoliContext}, elf::{is_pie, get_text, get_load_base, get_trace_stop}, maps::{get_base, get_maps}, cov::{Branch, Coverage, CodeLocation}};
 
 pub struct CanTracer;
 
 impl Cannoli for CanTracer {
     type Trace = TraceEntry;
     type TidContext = CanTracerContext;
-    type PidContext = ();
+    type PidContext = CannoliContext;
 
     fn init_pid(_ci: &ClientInfo) -> Arc<Self::PidContext> {
-        Arc::new(())
+        Arc::new(CannoliContext::new())
     }
 
     fn init_tid(_pid: &Self::PidContext, ci: &ClientInfo) -> (Self, Self::TidContext) {
@@ -23,7 +23,6 @@ impl Cannoli for CanTracer {
 
         let qemu_realpath = read_link(format!("/proc/{}/exe", ci.pid)).unwrap();
         let realpath = PathBuf::from(var("CANTRACE_PROG").unwrap());
-        let inputpath= PathBuf::from("TEST_CANTRACE_INPUT"); // var("CANTRACE_INPUT").unwrap());
         let bin = &read(realpath.clone()).unwrap()[..];
         let is_pie = is_pie(bin.clone());
         let qemu_base = get_base(ci.pid, qemu_realpath.clone());
@@ -52,7 +51,6 @@ impl Cannoli for CanTracer {
         (
             Self,
             CanTracerContext::new(
-                inputpath.clone(),
                 realpath.clone(),
                 bin,
                 is_pie,
@@ -62,6 +60,7 @@ impl Cannoli for CanTracer {
                 load_base,
                 stop_loc,
                 maps,
+                ci.pid,
             ),
         )
     }
@@ -179,18 +178,24 @@ impl Cannoli for CanTracer {
     }
 
     fn trace(&mut self, _pid: &Self::PidContext, tid: &Self::TidContext, trace: &[Self::Trace]) {
+        let mut stream = tid.stream.lock().unwrap();
+        let mut branches = tid.branches.lock().unwrap();
+        let mut branch_targets = tid.branch_targets.lock().unwrap();
+        let mut lastcf = tid.last_cf.lock().unwrap();
+        let mut lastret = tid.last_ret.lock().unwrap();
+        let mut causes = tid.causes.lock().unwrap();
+        let mut returns = tid.returns.lock().unwrap();
+        let mut cov = tid.cov.lock().unwrap();
 
         for entry in trace {
             match entry {
                 TraceEntry::Instr { pc, offset: _, instr: _, bytes: _} => {
-                    let mut branch_targets= tid.branch_targets.lock().unwrap();
                     // println!(
                             //     "{:x}: {:?}",
                             //     entry.pc,
                             //     entry.instr.display_with(DisplayStyle::Intel).to_string(),
                             // );
                     if let Some((next, target)) = *branch_targets {
-                        let mut cov= tid.cov.lock().unwrap();
                         if *pc == next || *pc == target {
                             let curr = *cov.get(pc).unwrap();
                             cov.insert(*pc,  curr + 1);
@@ -203,13 +208,6 @@ impl Cannoli for CanTracer {
                     *branch_targets = None;
                 }
                 TraceEntry::Branch {pc, offset, instr, bytes, next, target } => {
-                    let mut branch_targets= tid.branch_targets.lock().unwrap();
-                    let mut lastcf = tid.last_cf.lock().unwrap();
-                    // let mut lastret = tid.last_ret.lock().unwrap();
-                    let mut branches = tid.branches.lock().unwrap();
-                    let mut cov = tid.cov.lock().unwrap();
-                    let mut causes = tid.causes.lock().unwrap();
-                    let mut returns = tid.causes.lock().unwrap();
 
                     *branch_targets = Some((*next, *target));
 
@@ -217,9 +215,9 @@ impl Cannoli for CanTracer {
                         causes.insert(*pc, lastcf.clone().unwrap());
                     }
 
-                    // if lastret.is_some() && !returns.contains_key(pc) {
-                    //     returns.insert(*pc, lastret.clone().unwrap());
-                    // }
+                    if lastret.is_some() && !returns.contains_key(pc) {
+                        returns.insert(*pc, lastret.clone().unwrap());
+                    }
 
                     if !branches.contains_key(pc) {
                         // println!("new branch: {:x}", pc);
@@ -241,28 +239,16 @@ impl Cannoli for CanTracer {
                     // *lastret = None;
                 }
                 TraceEntry::CFSet { pc, offset, instr, bytes } => {
-                    let mut lastcf = tid.last_cf.lock().unwrap();
                     *lastcf = Some(CodeLocation::new(*pc, *offset, instr.display_with(DisplayStyle::Intel).to_string(), bytes.clone()));
                 }
                 TraceEntry::Return { pc, offset, instr, bytes } => {
-                    // We only want to log a return if it comes *before* our most recently seen compare
-                    // let lastcf = tid.last_cf.lock().unwrap();
-                    // let mut lastret = tid.last_ret.lock().unwrap();
-                    // if (lastcf.is_some() && *pc < lastcf.as_ref().unwrap().addr) || lastcf.is_none() {
-                    //     *lastret = Some(CodeLocation::new(*pc, *offset, instr.display_with(DisplayStyle::Intel).to_string(), bytes.clone()));
-                    // }
+                    if (lastcf.is_some() && *pc < lastcf.as_ref().unwrap().addr) || lastcf.is_none() {
+                        *lastret = Some(CodeLocation::new(*pc, *offset, instr.display_with(DisplayStyle::Intel).to_string(), bytes.clone()));
+                    }
                 }
                 TraceEntry::Done { } => {
-                    // println!();
-                    // println!("done");
-                    /* Print out coverage information  */
-                    info!("Got done signal while tracing. Consolidating coverage information.");
-                    let cov = tid.cov.lock().unwrap();
-                    let branches = tid.branches.lock().unwrap();
-                    let causes = tid.causes.lock().unwrap();
-                    let returns = tid.causes.lock().unwrap();
-
                     let mut final_cov = Coverage::new();
+                    final_cov.pid = Some(tid.currpid);
 
                     for (branch_addr, branches) in branches.iter() {
                         let branch = Branch::new(
@@ -273,16 +259,17 @@ impl Cannoli for CanTracer {
                             *cov.get(&branches.1).unwrap(),
                             branches.2,
                             *cov.get(&branches.2).unwrap(),
-                            vec![tid.ipath.clone().to_string_lossy().to_string()],
                         );
                         final_cov.branches.push(branch);
                     }
 
-                    let mut stream = tid.stream.lock().unwrap();
+                    // A bit janky but this will format it into a json array-ish without having
+                    // to do an array derive...I guess
                     stream.write_all(to_string(&final_cov).unwrap().as_bytes()).unwrap();
-                    stream.write_all(b",").unwrap();
                     stream.flush().unwrap();
                     stream.shutdown(Shutdown::Write).unwrap();
+
+                    info!("Got coverage information of {} branches.", final_cov.branches.len());
                 }
             }
         }
@@ -301,7 +288,7 @@ impl Cannoli for CanTracer {
         offset: u64,
         _trace: &mut Vec<Self::Trace>,
     ) {
-        info!("mmap: {:x} {:x} {:?} {:?} {:?} {:?} {:?} {:?}", base, len, anon, read, write, exec, path, offset);
+        debug!("mmap: {:x} {:x} {:?} {:?} {:?} {:?} {:?} {:?}", base, len, anon, read, write, exec, path, offset);
     }
 
     fn munmap(
@@ -311,6 +298,6 @@ impl Cannoli for CanTracer {
         len: u64,
         _trace: &mut Vec<Self::Trace>,
     ) {
-        info!("munmap: {:x} {:x}", base, len);
+        debug!("munmap: {:x} {:x}", base, len);
     }
 }

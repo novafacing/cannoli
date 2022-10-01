@@ -1,13 +1,23 @@
 use std::collections::HashMap;
 use std::env::var;
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use log::debug;
 use yaxpeax_x86::long_mode::InstDecoder;
 
 use crate::cov::CodeLocation;
 use crate::maps::MemoryMap;
 use std::os::unix::net::UnixStream;
+
+pub struct CannoliContext {}
+
+impl CannoliContext {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
 
 pub struct CanTracerContext {
     pub stream: Arc<Mutex<UnixStream>>,
@@ -19,7 +29,6 @@ pub struct CanTracerContext {
     pub causes: Arc<Mutex<HashMap<u64, CodeLocation>>>,
     pub returns: Arc<Mutex<HashMap<u64, CodeLocation>>>,
     pub cov: Arc<Mutex<HashMap<u64, u64>>>,
-    pub ipath: PathBuf,
     pub fpath: PathBuf,
     pub bin: Vec<u8>,
     pub is_pie: bool,
@@ -29,11 +38,11 @@ pub struct CanTracerContext {
     pub load_base: u64,
     pub stop_loc: u64,
     pub maps: Vec<MemoryMap>,
+    pub currpid: i32,
 }
 
 impl CanTracerContext {
     pub fn new(
-        ipath: PathBuf,
         fpath: PathBuf,
         _bin: &[u8],
         is_pie: bool,
@@ -43,6 +52,7 @@ impl CanTracerContext {
         load_base: u64,
         stop_loc: u64,
         maps: Vec<MemoryMap>,
+        currpid: i32,
     ) -> Self {
         let bin = _bin.clone();
         Self {
@@ -58,7 +68,6 @@ impl CanTracerContext {
             causes: Arc::new(Mutex::new(HashMap::new())),
             returns: Arc::new(Mutex::new(HashMap::new())),
             cov: Arc::new(Mutex::new(HashMap::new())),
-            ipath: ipath.clone(),
             fpath: fpath.clone(),
             bin: bin.to_vec(),
             is_pie,
@@ -68,6 +77,7 @@ impl CanTracerContext {
             load_base,
             stop_loc,
             maps,
+            currpid,
         }
     }
 

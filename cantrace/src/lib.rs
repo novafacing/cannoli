@@ -7,10 +7,11 @@ pub mod elf;
 pub mod maps;
 pub mod trace_entry;
 
+use std::collections::HashMap;
 use std::env::set_var;
-use std::fs::read;
+use std::fs::{read, File};
 use std::io::{Read, Write};
-use std::os::unix::net::UnixListener;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread::spawn;
@@ -20,7 +21,7 @@ use can_tracer::CanTracer;
 use cannoli::create_cannoli;
 use cov::Coverage;
 use indicatif::ProgressBar;
-use log::debug;
+use log::{debug, info};
 use serde_json::to_string_pretty;
 use uuid::Uuid;
 
@@ -31,6 +32,7 @@ pub fn trace(
     input_path: Option<PathBuf>,
     ld_library_path: Option<PathBuf>,
     cannoli_threads: Option<usize>,
+    output: Option<PathBuf>,
     args: Vec<String>,
 ) {
     let prog_path = prog_path.canonicalize().unwrap();
@@ -101,7 +103,17 @@ pub fn trace(
         inputs.push((None, Stdio::null()));
     }
 
+    // set_var(
+    //     "CANTRACE_INPUTS",
+    //     inputs
+    //         .iter()
+    //         .map(|x| x.0.as_ref().unwrap().to_str().unwrap())
+    //         .collect::<Vec<&str>>()
+    //         .join(":"),
+    // );
+
     let bar = ProgressBar::new(u64::try_from(inputs.len()).ok().unwrap());
+    let mut pid_input_map = HashMap::new();
 
     for input in inputs {
         let mut qemu = Command::new(qemu_path_str)
@@ -115,6 +127,17 @@ pub fn trace(
             .args(args.clone())
             .spawn()
             .expect("Failed to spawn qemu");
+
+        pid_input_map.insert(
+            i32::try_from(qemu.id()).ok().unwrap(),
+            input
+                .0
+                .as_ref()
+                .unwrap()
+                .clone()
+                .to_string_lossy()
+                .to_string(),
+        );
 
         if let Some(infile) = input.0 {
             let mut qemu_stdin = qemu.stdin.take().expect("Failed to open qemu stdin");
@@ -164,20 +187,28 @@ pub fn trace(
     bar.finish();
 
     /* read everything from stream */
-    let mut buf = [0; 4096];
-    let mut output = Vec::new();
-    output.push(b'[');
-    let (mut stream, _) = stream.accept().unwrap();
-    loop {
-        let n = stream.read(&mut buf).unwrap();
-        if n == 0 {
-            break;
+    let mut all_covs = Vec::new();
+    for _ in 0..pid_input_map.len() {
+        let mut buf = [0; 4096];
+        let mut output = Vec::new();
+        let (mut stream, _) = stream.accept().unwrap();
+        loop {
+            let n = stream.read(&mut buf).unwrap();
+            if n == 0 {
+                break;
+            }
+            output.extend(&buf[..n]);
         }
-        output.extend(&buf[..n]);
+        let cov: Coverage = serde_json::from_slice(&output).unwrap();
+        all_covs.push(cov);
     }
-    output.pop(); // Remove last comma
-    output.push(b']');
-    let covs: Vec<Coverage> = serde_json::from_slice(&output).unwrap();
-    let full_cov = Coverage::from(covs);
-    print!("{}", to_string_pretty(&full_cov).unwrap());
+    info!("Got {} coverage entries", all_covs.len());
+    let full_cov = Coverage::from(all_covs, pid_input_map);
+    if let Some(path) = output {
+        let mut file = File::create(path).unwrap();
+        file.write_all(to_string_pretty(&full_cov).unwrap().as_bytes())
+            .unwrap();
+    } else {
+        print!("{}", to_string_pretty(&full_cov).unwrap());
+    }
 }
