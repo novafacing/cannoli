@@ -21,7 +21,7 @@ use can_tracer::CanTracer;
 use cannoli::create_cannoli;
 use cov::Coverage;
 use indicatif::ProgressBar;
-use log::{debug, info};
+use log::{debug, error, info};
 use serde_json::to_string_pretty;
 use uuid::Uuid;
 
@@ -199,8 +199,17 @@ pub fn trace(
             }
             output.extend(&buf[..n]);
         }
-        let cov: Coverage = serde_json::from_slice(&output).unwrap();
-        all_covs.push(cov);
+        let cov: Option<Coverage> = serde_json::from_slice(&output).unwrap_or_else(|_| {
+            error!(
+                "Failed to deserialize coverage from {:?}",
+                String::from_utf8_lossy(&output)
+            );
+            None
+        });
+
+        if cov.is_some() {
+            all_covs.push(cov.unwrap());
+        }
     }
     info!("Got {} coverage entries", all_covs.len());
     let full_cov = Coverage::from(all_covs, pid_input_map);
